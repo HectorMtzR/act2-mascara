@@ -76,8 +76,10 @@ const fragmentShader = /* glsl */ `
     // Máscara de lava: la roca es oscura (canal rojo bajo); las grietas, brillantes.
     float lava = smoothstep(0.08, 0.6, c.r);
     vec3 rgb = c.rgb * mix(1.0, uGlow, lava);
-    vec3 hot = mix(rgb, vec3(1.0, 0.93, 0.7) * max(1.0, uGlow), lava * 0.85);
-    rgb = mix(rgb, hot, uHeat);
+    // Calor: solo el núcleo de las grietas pasa a amarillo y lo más caliente a casi blanco.
+    float core = smoothstep(0.25, 0.9, c.r);
+    vec3 hot = mix(vec3(1.0, 0.72, 0.16), vec3(1.0, 0.96, 0.82), core) * max(1.0, uGlow);
+    rgb = mix(rgb, hot, uHeat * core);
 
     if (c.a < 0.01) discard;
     gl_FragColor = vec4(rgb, c.a);

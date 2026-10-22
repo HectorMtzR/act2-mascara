@@ -20,11 +20,35 @@ export const CONFIG = {
     jawOpen:     { threshold: 0.5, cooldown: 1.0 },
     browInnerUp: { threshold: 0.5, cooldown: 1.5 },
   },
+  // Histéresis: tras disparar, el gesto se rearma cuando baja de threshold * GESTURE_RELEASE.
+  GESTURE_RELEASE: 0.8,
 
   // --- Efectos ---
-  ERUPTION: { glowPeak: 2.5, duration: 1.0, particles: 60 },
+  ERUPTION: {
+    glowPeak: 2.5,
+    duration: 1.0,           // s, curva del brillo
+    particles: 60,
+    spawnTime: 0.8,          // s emitiendo brasas desde la boca
+    life: [0.6, 1.1],        // s de vida de cada brasa
+    size: [0.2, 0.45],       // tamaño de la brasa (fracción del ancho de los ojos)
+    speed: [2.6, 5.0],       // velocidad (anchos de ojos por segundo)
+    spread: 1.3,             // rad a cada lado de "arriba de la cara"
+    gravity: 4.0,            // anchos de ojos / s²
+    flash: 0.55,             // opacidad máxima del destello naranja en los bordes
+  },
   HEAT: { duration: 1.5 },
+  EMBER_SPRITE: "assets/particles/ember.png",
+
+  // --- Audio ---
   AMBIENT_VOLUME: 0.25,
+  EFFECT_VOLUME: 0.9,
+  // Archivos de sonido opcionales (p. ej. "assets/sounds/eruption.mp3").
+  // Con null se usa el sonido sintetizado con Web Audio.
+  SOUNDS: {
+    ambient_fire: null,
+    eruption: null,
+    sizzle: null,
+  },
 
   // --- MediaPipe Face Landmarker ---
   MEDIAPIPE: {

@@ -4,7 +4,9 @@ import { CONFIG } from "./config.js";
 import { createFaceTracker } from "./face.js";
 import { createScene } from "./scene.js";
 import { createMask } from "./mask.js";
-import { unlockAudio, setMuted, isMuted } from "./audio.js";
+import { createGestureDetector } from "./gestures.js";
+import { createEffects } from "./effects.js";
+import { unlockAudio, isUnlocked, setMuted, isMuted, startAmbient } from "./audio.js";
 
 const params = new URLSearchParams(location.search);
 const DEBUG = params.get("debug") === "1";
@@ -23,6 +25,7 @@ const ui = {
   hint: document.getElementById("hint"),
   sound: document.getElementById("sound"),
   debug: document.getElementById("debug"),
+  flash: document.getElementById("flash"),
 };
 
 function show(el, visible) {
@@ -107,22 +110,44 @@ function updateLandmarkPoints(points, landmarks, toWorld) {
   attr.needsUpdate = true;
 }
 
-// ---------- Botón de sonido ----------
-function setupSoundButton() {
+// ---------- Sonido ----------
+// Los navegadores no permiten audio sin interacción: el primer toque (en cualquier parte
+// o en el botón) desbloquea el audio, lo enciende y arranca el fuego ambiente.
+function setupAudio() {
   const refresh = () => {
     ui.sound.textContent = isMuted() ? "🔇" : "🔊";
     ui.sound.setAttribute("aria-label", isMuted() ? "Activar sonido" : "Silenciar");
   };
-  ui.sound.addEventListener("click", async () => {
-    await unlockAudio();
+  const enable = async () => {
+    if (!(await unlockAudio())) return;
+    setMuted(false);
+    startAmbient();
+    refresh();
+  };
+  const firstTouch = (e) => {
+    window.removeEventListener("pointerup", firstTouch, true);
+    if (e.target !== ui.sound) enable(); // si fue el botón, lo maneja su "click"
+  };
+  window.addEventListener("pointerup", firstTouch, true);
+  ui.sound.addEventListener("click", () => {
+    if (!isUnlocked()) return enable();
     setMuted(!isMuted());
     refresh();
   });
   refresh();
 }
 
-// ---------- Depuración ----------
-function createDebugPanel(delegate) {
+// ---------- Depuración (?debug=1) ----------
+// Barra de 0 a 1 con el umbral marcado: "██████|···"
+function meter(value, threshold, width = 14) {
+  const fill = Math.round(Math.min(Math.max(value, 0), 1) * width);
+  const mark = Math.round(threshold * width);
+  let s = "";
+  for (let i = 0; i < width; i++) s += i === mark ? "|" : i < fill ? "█" : "·";
+  return s;
+}
+
+function createDebugPanel(delegate, gestures) {
   if (!DEBUG) return () => {};
   show(ui.debug, true);
   let frames = 0;
@@ -136,24 +161,35 @@ function createDebugPanel(delegate) {
       frames = 0;
       last = now;
     }
-    ui.debug.textContent =
-      `fps ${fps.toFixed(0)} · ${delegate}\n` +
-      `video ${video.videoWidth}×${video.videoHeight}\n` +
-      `cara ${face ? `sí (${face.landmarks.length} pts)` : "no"}`;
+    const lines = [
+      `fps ${fps.toFixed(0)} · ${delegate}`,
+      `video ${video.videoWidth}×${video.videoHeight}`,
+      `cara ${face ? `sí (${face.landmarks.length} pts)` : "no"}`,
+      "",
+    ];
+    for (const [name, { threshold }] of Object.entries(CONFIG.GESTURES)) {
+      const g = gestures.state[name];
+      lines.push(`${name.padEnd(11)} ${g.value.toFixed(2)} ${meter(g.value, threshold)} ×${g.count}`);
+    }
+    lines.push("", "teclas: E erupción · H calor");
+    ui.debug.textContent = lines.join("\n");
   };
 }
 
 // ---------- Arranque ----------
 async function main() {
-  setupSoundButton();
+  setupAudio();
 
   // La cámara, el modelo y la malla se cargan en paralelo.
   const view = createScene(canvas, video);
   const trackerPromise = createFaceTracker();
   const maskPromise = createMask(view.scene, MASK_SHEET);
+  const effectsPromise = maskPromise.then((mask) =>
+    createEffects({ scene: view.scene, renderer: view.renderer, mask, flash: ui.flash })
+  );
   // Los errores se manejan abajo, después de la cámara.
   trackerPromise.catch(() => {});
-  maskPromise.catch(() => {});
+  effectsPromise.catch(() => {});
   try {
     await startCamera();
   } catch (err) {
@@ -172,8 +208,9 @@ async function main() {
   }
 
   let mask;
+  let effects;
   try {
-    mask = await maskPromise;
+    [mask, effects] = await Promise.all([maskPromise, effectsPromise]);
   } catch (err) {
     console.error("[main] máscara:", err);
     showError("No se pudo cargar la máscara", "Recarga la página para intentarlo de nuevo.");
@@ -183,19 +220,32 @@ async function main() {
   show(ui.hint, true);
   view.resize(); // el video ya tiene tamaño real
 
+  const gestures = createGestureDetector();
   const points = DEBUG ? createLandmarkPoints() : null;
   if (points) view.scene.add(points);
-  const updateDebug = createDebugPanel(tracker.delegate);
+  const updateDebug = createDebugPanel(tracker.delegate, gestures);
+  if (DEBUG) {
+    // Disparar los efectos con el teclado, sin hacer el gesto.
+    window.addEventListener("keydown", (e) => {
+      const t = performance.now() / 1000;
+      if (e.key === "e") effects.trigger("jawOpen", t);
+      if (e.key === "h") effects.trigger("browInnerUp", t);
+    });
+  }
 
   function frame(timeMs) {
+    const t = timeMs / 1000;
     const face = tracker.detect(video, timeMs);
-    mask.tick(timeMs / 1000);
+    mask.tick(t);
     if (face) {
       mask.update(face.landmarks, view.landmarkToWorld);
+      for (const gesture of gestures.update(face.blendshapes, t)) effects.trigger(gesture, t);
       if (points) updateLandmarkPoints(points, face.landmarks, view.landmarkToWorld);
     } else {
       mask.hide();
+      gestures.reset();
     }
+    effects.update(t, face ? face.landmarks : null, view.landmarkToWorld);
     if (points) points.visible = !!face;
     show(ui.noFace, !face);
     updateDebug(face);
