@@ -3,3 +3,4 @@ blender/output/
 Thumbs.db
 .wrangler/
 node_modules/
+__pycache__/
