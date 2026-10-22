@@ -1,0 +1,12 @@
+// Despliegue en Cloudflare Workers como sitio estático (sin código de servidor).
+// Publicar:   npx wrangler deploy
+// Probar local: npx wrangler dev
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mascara-lava-ar",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    // Se publica la raíz del repo; lo que no es del sitio se excluye en .assetsignore
+    "directory": "."
+  }
+}

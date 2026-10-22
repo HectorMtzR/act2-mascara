@@ -1,0 +1,5 @@
+blender/output/
+.DS_Store
+Thumbs.db
+.wrangler/
+node_modules/

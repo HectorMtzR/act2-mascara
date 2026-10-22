@@ -1,0 +1,11 @@
+# Archivos del repo que NO se publican en Cloudflare (sintaxis de .gitignore)
+.git/
+.wrangler/
+node_modules/
+blender/
+docs/
+*.md
+wrangler.jsonc
+.gitignore
+.DS_Store
+Thumbs.db
