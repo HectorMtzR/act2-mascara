@@ -6,7 +6,12 @@ import { createScene } from "./scene.js";
 import { createMask } from "./mask.js";
 import { unlockAudio, setMuted, isMuted } from "./audio.js";
 
-const DEBUG = new URLSearchParams(location.search).get("debug") === "1";
+const params = new URLSearchParams(location.search);
+const DEBUG = params.get("debug") === "1";
+// ?template=1 muestra la plantilla UV en lugar de la lava (para revisar la alineación).
+const MASK_SHEET = params.get("template") === "1"
+  ? { url: CONFIG.UV_TEMPLATE, grid: 1, frames: 1 }
+  : { url: CONFIG.MASK_SHEET, grid: CONFIG.SHEET_GRID, frames: CONFIG.SHEET_FRAMES };
 const NUM_MESH_POINTS = 478; // 468 de la cara + 10 del iris
 
 const video = document.getElementById("video");
@@ -145,7 +150,7 @@ async function main() {
   // La cámara, el modelo y la malla se cargan en paralelo.
   const view = createScene(canvas, video);
   const trackerPromise = createFaceTracker();
-  const maskPromise = createMask(view.scene, CONFIG.UV_TEMPLATE);
+  const maskPromise = createMask(view.scene, MASK_SHEET);
   // Los errores se manejan abajo, después de la cámara.
   trackerPromise.catch(() => {});
   maskPromise.catch(() => {});
@@ -184,6 +189,7 @@ async function main() {
 
   function frame(timeMs) {
     const face = tracker.detect(video, timeMs);
+    mask.tick(timeMs / 1000);
     if (face) {
       mask.update(face.landmarks, view.landmarkToWorld);
       if (points) updateLandmarkPoints(points, face.landmarks, view.landmarkToWorld);

@@ -13,6 +13,7 @@ export const CONFIG = {
   SHEET_GRID: 4,             // 4x4 cuadros
   SHEET_FRAMES: 16,
   MASK_FPS: 8,
+  MASK_BLEND: true,          // funde cada cuadro con el siguiente (flujo suave a 8 fps)
 
   // --- Gestos (blendshapes de MediaPipe) ---
   GESTURES: {
