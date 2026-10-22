@@ -6,6 +6,7 @@ import { createScene } from "./scene.js";
 import { createMask } from "./mask.js";
 import { createGestureDetector } from "./gestures.js";
 import { createEffects } from "./effects.js";
+import { createFlames } from "./flames.js";
 import { unlockAudio, isUnlocked, setMuted, isMuted, startAmbient } from "./audio.js";
 
 const params = new URLSearchParams(location.search);
@@ -221,6 +222,7 @@ async function main() {
   view.resize(); // el video ya tiene tamaño real
 
   const gestures = createGestureDetector();
+  const flames = CONFIG.FLAMES.enabled ? createFlames(view.scene, mask.uniforms) : null;
   const points = DEBUG ? createLandmarkPoints() : null;
   if (points) view.scene.add(points);
   const updateDebug = createDebugPanel(tracker.delegate, gestures);
@@ -237,12 +239,15 @@ async function main() {
     const t = timeMs / 1000;
     const face = tracker.detect(video, timeMs);
     mask.tick(t);
+    flames?.tick(t);
     if (face) {
       mask.update(face.landmarks, view.landmarkToWorld);
+      flames?.update(face.landmarks, view.landmarkToWorld);
       for (const gesture of gestures.update(face.blendshapes, t)) effects.trigger(gesture, t);
       if (points) updateLandmarkPoints(points, face.landmarks, view.landmarkToWorld);
     } else {
       mask.hide();
+      flames?.hide();
       gestures.reset();
     }
     effects.update(t, face ? face.landmarks : null, view.landmarkToWorld);

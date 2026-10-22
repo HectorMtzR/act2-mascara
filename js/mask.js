@@ -56,6 +56,7 @@ const fragmentShader = /* glsl */ `
   uniform float uInset;   // margen dentro de cada cuadro (evita mezclar con el vecino)
   uniform float uGlow;    // 1 normal, sube con la erupción
   uniform float uHeat;    // 0..1, lleva la lava hacia amarillo-blanco
+  uniform float uCover;   // 1 = ignora la transparencia de ojos y boca (lava debajo)
   varying vec2 vUv;
 
   // UV dentro de la sprite sheet. El cuadro 0 está arriba a la izquierda.
@@ -81,8 +82,11 @@ const fragmentShader = /* glsl */ `
     vec3 hot = mix(vec3(1.0, 0.72, 0.16), vec3(1.0, 0.96, 0.82), core) * max(1.0, uGlow);
     rgb = mix(rgb, hot, uHeat * core);
 
-    if (c.a < 0.01) discard;
-    gl_FragColor = vec4(rgb, c.a);
+    // Toda la malla cae dentro de la isla UV; los únicos huecos son ojos y boca,
+    // y debajo de ellos el bake también tiene lava.
+    float alpha = max(c.a, uCover);
+    if (alpha < 0.01) discard;
+    gl_FragColor = vec4(rgb, alpha);
     #include <colorspace_fragment>
   }
 `;
@@ -118,6 +122,7 @@ export async function createMask(scene, sheet) {
     uInset: { value: 0.5 / frameSize },
     uGlow: { value: 1 },
     uHeat: { value: 0 },
+    uCover: { value: CONFIG.MASK_COVER_EYES_MOUTH ? 1 : 0 },
   };
 
   const material = new THREE.ShaderMaterial({

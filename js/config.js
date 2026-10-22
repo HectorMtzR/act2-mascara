@@ -14,6 +14,23 @@ export const CONFIG = {
   SHEET_FRAMES: 16,
   MASK_FPS: 8,
   MASK_BLEND: true,          // funde cada cuadro con el siguiente (flujo suave a 8 fps)
+  // true = ojos y boca también cubiertos de lava (la spec pide que se vean: false).
+  MASK_COVER_EYES_MOUTH: false,
+
+  // --- Corona de flamas alrededor de la cara (alturas en "altos de cara") ---
+  FLAMES: {
+    enabled: true,
+    top: 0.9,                // sobre la frente / pelo
+    side: 0.24,              // a los lados
+    chin: 0.05,              // en la barbilla
+    inset: 0.04,             // cuánto empiezan por dentro del contorno (tapado por la máscara)
+    bend: 0.7,               // 0 = salen perpendiculares al borde, 1 = suben rectas
+    tongues: 5.0,            // tamaño del ruido alrededor del contorno (más = más lenguas)
+    speed: 1.4,              // velocidad de subida
+    eruptionGrow: 0.35,      // cuánto crecen durante la erupción
+    subdivisions: 4,         // suavizado del contorno (36 puntos × 4)
+    rows: 10,
+  },
 
   // --- Gestos (blendshapes de MediaPipe) ---
   GESTURES: {
