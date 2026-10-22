@@ -4,6 +4,10 @@
 const MEDIAPIPE_VERSION = "0.10.14";
 
 export const CONFIG = {
+  // --- Malla facial ---
+  FACE_MODEL: "assets/face/canonical_face_model.obj",
+  UV_TEMPLATE: "assets/face/uv_template.png",
+
   // --- Máscara ---
   MASK_SHEET: "assets/mask/lava_sheet.png",
   SHEET_GRID: 4,             // 4x4 cuadros

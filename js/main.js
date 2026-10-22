@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { CONFIG } from "./config.js";
 import { createFaceTracker } from "./face.js";
 import { createScene } from "./scene.js";
+import { createMask } from "./mask.js";
 import { unlockAudio, setMuted, isMuted } from "./audio.js";
 
 const DEBUG = new URLSearchParams(location.search).get("debug") === "1";
@@ -75,7 +76,7 @@ function explainCameraError(err) {
   }
 }
 
-// ---------- Puntos de landmarks (Fase 1) ----------
+// ---------- Puntos de landmarks (solo con ?debug=1) ----------
 function createLandmarkPoints() {
   const geometry = new THREE.BufferGeometry();
   const positions = new Float32Array(NUM_MESH_POINTS * 3);
@@ -84,9 +85,11 @@ function createLandmarkPoints() {
     color: CONFIG.DEBUG_POINT_COLOR,
     size: CONFIG.DEBUG_POINT_SIZE,
     sizeAttenuation: false,
+    depthTest: false, // siempre encima de la máscara
   });
   const points = new THREE.Points(geometry, material);
   points.frustumCulled = false;
+  points.renderOrder = 10;
   points.visible = false;
   return points;
 }
@@ -139,8 +142,13 @@ function createDebugPanel(delegate) {
 async function main() {
   setupSoundButton();
 
-  // La cámara y el modelo se cargan en paralelo.
+  // La cámara, el modelo y la malla se cargan en paralelo.
+  const view = createScene(canvas, video);
   const trackerPromise = createFaceTracker();
+  const maskPromise = createMask(view.scene, CONFIG.UV_TEMPLATE);
+  // Los errores se manejan abajo, después de la cámara.
+  trackerPromise.catch(() => {});
+  maskPromise.catch(() => {});
   try {
     await startCamera();
   } catch (err) {
@@ -157,22 +165,32 @@ async function main() {
     showError("No se pudo cargar el detector facial", "Revisa tu conexión a internet y recarga la página.");
     return;
   }
+
+  let mask;
+  try {
+    mask = await maskPromise;
+  } catch (err) {
+    console.error("[main] máscara:", err);
+    showError("No se pudo cargar la máscara", "Recarga la página para intentarlo de nuevo.");
+    return;
+  }
   show(ui.loading, false);
   show(ui.hint, true);
+  view.resize(); // el video ya tiene tamaño real
 
-  const view = createScene(canvas, video);
-  const points = createLandmarkPoints();
-  view.scene.add(points);
+  const points = DEBUG ? createLandmarkPoints() : null;
+  if (points) view.scene.add(points);
   const updateDebug = createDebugPanel(tracker.delegate);
 
   function frame(timeMs) {
     const face = tracker.detect(video, timeMs);
     if (face) {
-      updateLandmarkPoints(points, face.landmarks, view.landmarkToWorld);
-      points.visible = true;
+      mask.update(face.landmarks, view.landmarkToWorld);
+      if (points) updateLandmarkPoints(points, face.landmarks, view.landmarkToWorld);
     } else {
-      points.visible = false;
+      mask.hide();
     }
+    if (points) points.visible = !!face;
     show(ui.noFace, !face);
     updateDebug(face);
     view.render();
