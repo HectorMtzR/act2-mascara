@@ -14,8 +14,8 @@ export const CONFIG = {
   SHEET_FRAMES: 16,
   MASK_FPS: 8,
   MASK_BLEND: true,          // funde cada cuadro con el siguiente (flujo suave a 8 fps)
-  // true = ojos y boca también cubiertos de lava (la spec pide que se vean: false).
-  MASK_COVER_EYES_MOUTH: false,
+  // Ojos y boca: rellenos de lava o transparentes se decide en blender/02_lava_frames.py
+  // (EYES_MOUTH); el shader solo respeta el alfa de la sprite sheet.
 
   // --- Corona de flamas alrededor de la cara (alturas en "altos de cara") ---
   FLAMES: {

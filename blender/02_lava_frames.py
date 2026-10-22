@@ -14,7 +14,8 @@ Flujo:
      ColorRamp + Emission = lava.
   4. Por cada cuadro mueve el ruido del flujo en un círculo (cos/sin de la fase) y modula el
      brillo con sin(2·fase): el último cuadro empata con el primero, el loop no salta.
-  5. Hornea la emisión a una imagen en espacio UV (Cycles) y aplica alfa = 0 en ojos y boca.
+  5. Hornea la emisión a una imagen en espacio UV (Cycles) y rellena ojos y boca con lava
+     fundida (o los deja transparentes con EYES_MOUTH = "transparent").
 """
 import math
 import os
@@ -44,9 +45,10 @@ COLORS = {
     "lava_core": "#ffd23f",
     "lava_white": "#fff4c2",
 }
-CRACK_SCALE = 0.55        # grietas principales (celdas por unidad de la malla, ~15 de ancho)
-FINE_CRACK_SCALE = 1.35   # grietas finas, solo en zonas intensas
-CRACK_WIDTH = (0.035, 0.085)  # ancho mínimo/máximo (varía a lo largo de la grieta)
+CRACK_SCALE = 0.36        # grietas principales (celdas por unidad de la malla, ~15 de ancho;
+                          # menos = placas de roca más grandes)
+FINE_CRACK_SCALE = 0.85   # grietas finas, solo en zonas intensas
+CRACK_WIDTH = (0.05, 0.11)  # ancho mínimo/máximo, relativo a la celda (varía a lo largo de la grieta)
 FLOW_RADIUS = 1.6         # cuánto se desplaza el ruido del flujo en un loop
 FLOW_SCALE = 0.6          # tamaño de los "pulsos" de lava que recorren las grietas
 FLOW_CONTRAST = (0.2, 1.45)  # energía mínima/máxima de la lava a lo largo de la grieta
@@ -61,7 +63,13 @@ HOT_SPOTS = [
     ((4.9, -0.6), 2.0),     # pómulo izquierdo
 ]
 
-# Transparencia de ojos y boca (px a resolución de bake).
+# Ojos y boca: "lava" = rellenos de lava fundida (no se ven los reales),
+#               "transparent" = alfa 0 (se ven los ojos y la boca reales).
+EYES_MOUTH = "lava"
+FILL_CENTER = "#ffc23a"   # centro del relleno (amarillo-naranja)
+FILL_EDGE = "#ff5a00"     # borde del relleno (naranja de la lava)
+
+# Zonas de ojos y boca (px a resolución de bake).
 EYE_GROW = 3
 MOUTH_GROW = 7
 HOLE_FEATHER = 2
@@ -235,12 +243,12 @@ def build_material(obj, bake_image):
     g.link(plate, plate_r.inputs[0])
     plate_shade = g.math("MULTIPLY_ADD", plate_r.outputs[0], 0.55, 0.7)
     rock = g.mix("MULTIPLY", rock, plate_shade)
-    charred = g.smoothstep(d_main, 0.0, g.math("MULTIPLY", width, 3.0), 0.35, 1.0)
+    charred = g.smoothstep(d_main, 0.0, g.math("MULTIPLY", width, 2.4), 0.35, 1.0)
     rock = g.mix("MULTIPLY", rock, charred)
 
     # Resplandor naranja sobre la roca alrededor de las grietas.
-    halo = g.smoothstep(d_main, 0.0, g.math("MULTIPLY", width, 4.5), 1.0, 0.0)
-    halo = g.math("MULTIPLY", halo, g.math("MULTIPLY_ADD", heat, 0.25, 0.12))
+    halo = g.smoothstep(d_main, 0.0, g.math("MULTIPLY", width, 2.6), 1.0, 0.0)
+    halo = g.math("MULTIPLY", halo, g.math("MULTIPLY_ADD", heat, 0.2, 0.08))
     halo = g.math("MULTIPLY", halo, pulse.outputs[0])
     rock = g.mix("ADD", rock, uvlib.srgb_hex_to_linear(COLORS["lava"]), halo)
 
@@ -272,20 +280,41 @@ def build_material(obj, bake_image):
     return flow_offset, pulse
 
 
-# ---------------------------------------------------------------- transparencia
+# ---------------------------------------------------------------- ojos y boca
 
-def build_alpha(n, uvs, tri):
-    """Alfa en espacio UV: 1 en la cara, 0 en ojos/boca y fuera de la malla."""
+def build_masks(n, uvs, tri):
+    """Máscaras en espacio UV.
+
+    island: 1 dentro de la malla (más un margen), 0 fuera.
+    holes:  0..1, zonas de ojos y boca con borde suave.
+    core:   0..1, qué tan al centro de esas zonas está cada píxel (para el degradado).
+
+    La boca de la malla canónica está cerrada (una franja de ~2 px en UV) y al abrirla los
+    triángulos se estiran sobre esa franja; por eso se agranda varios píxeles.
+    """
     island = uvlib.dilate(uvlib.fill_triangles(n, uvs[tri]), ISLAND_MARGIN)
-    holes = np.zeros((n, n), dtype=bool)
+    hard = np.zeros((n, n), dtype=bool)
     for contour, grow in ((uvlib.EYE_RIGHT, EYE_GROW), (uvlib.EYE_LEFT, EYE_GROW),
                           (uvlib.MOUTH_INNER, MOUTH_GROW)):
         poly = uvs[contour]
         region = uvlib.fill_polygon(n, poly) | uvlib.draw_polyline(n, poly)
-        holes |= uvlib.dilate(region, grow)
-    soft_holes = np.clip(uvlib.blur(holes, HOLE_FEATHER) * 1.6, 0, 1)
-    soft_holes = np.maximum(soft_holes, holes)
-    return island.astype(np.float32) * (1.0 - soft_holes)
+        hard |= uvlib.dilate(region, grow)
+    holes = np.maximum(np.clip(uvlib.blur(hard, HOLE_FEATHER) * 1.6, 0, 1), hard)
+    core = np.clip(uvlib.blur(hard, 4) * 1.4 - 0.2, 0, 1) ** 1.5
+    glow = np.clip(uvlib.blur(hard, 9) * 1.8, 0, 1) * (1.0 - holes)  # resplandor alrededor
+    return island.astype(np.float32), holes, core, glow
+
+
+def fill_eyes_mouth(rgb, holes, core, glow, phase):
+    """Rellena ojos y boca con lava fundida lisa (se estira bien cuando la boca se abre)
+    y les da un resplandor naranja alrededor, como pozos de lava encendida."""
+    beat = 1.0 + 0.5 * PULSE * math.sin(2 * phase)  # late junto con las grietas
+    center = np.array(uvlib.srgb_hex_to_linear(FILL_CENTER)[:3])
+    edge = np.array(uvlib.srgb_hex_to_linear(FILL_EDGE)[:3])
+    fill = uvlib.linear_to_srgb((edge + (center - edge) * core[..., None]) * beat)
+    halo = uvlib.linear_to_srgb(edge * beat)
+    rgb = rgb + (halo - rgb) * (glow[..., None] * 0.55)
+    return rgb * (1.0 - holes[..., None]) + fill * holes[..., None]
 
 
 # ---------------------------------------------------------------- main
@@ -318,7 +347,8 @@ def main():
     bake_n = SIZE * SUPERSAMPLE
     bake_img = bpy.data.images.new("bake", bake_n, bake_n, alpha=True, float_buffer=True)
     flow_offset, pulse = build_material(obj, bake_img)
-    alpha = build_alpha(bake_n, uvs, tri)
+    island, holes, core, glow = build_masks(bake_n, uvs, tri)
+    alpha = island * (1.0 - holes) if EYES_MOUTH == "transparent" else island
 
     for f in range(FRAMES):
         phase = 2 * math.pi * f / FRAMES
@@ -331,7 +361,10 @@ def main():
         px = np.empty(bake_n * bake_n * 4, dtype=np.float32)
         bake_img.pixels.foreach_get(px)
         px = px.reshape(bake_n, bake_n, 4)
-        rgba = np.dstack([uvlib.linear_to_srgb(px[..., :3]), alpha])
+        rgb = uvlib.linear_to_srgb(px[..., :3])
+        if EYES_MOUTH == "lava":
+            rgb = fill_eyes_mouth(rgb, holes, core, glow, phase)
+        rgba = np.dstack([rgb, alpha])
         rgba = downsample(rgba, SUPERSAMPLE)
 
         path = os.path.join(OUT_DIR, f"frame_{f:02d}.png")

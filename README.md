@@ -71,7 +71,8 @@ diseñar.
 
 ### 2. Material procedural y bake — `blender/02_lava_frames.py`
 
-- **Grietas:** Voronoi (distancia a borde) deformado con ruido, con ancho variable.
+- **Grietas:** Voronoi (distancia a borde) deformado con ruido: placas de roca grandes y
+  ríos de lava gruesos de ancho variable.
   Alrededor de **ojos, frente y pómulos** hay una segunda red de grietas más fina y más brillo.
 - **Roca:** Noise oscuro (`#1a1414` – `#3a2e2a`), placas con tono propio y bordes chamuscados.
 - **Lava:** ColorRamp + Emission: rojo profundo → naranja `#ff5a00` → amarillo `#ffd23f` →
@@ -79,8 +80,12 @@ diseñar.
 - **Animación:** el ruido que recorre las grietas se desplaza en un círculo (seno y coseno de
   la fase) y el brillo late con `sin(2·fase)`, así que el **cuadro 16 empata con el 1**:
   el loop no salta.
-- **Bake:** Cycles hornea la emisión de cada cuadro a la UV. Después se aplica
-  **alfa = 0 en ojos y boca** a partir de los contornos de MediaPipe.
+- **Bake:** Cycles hornea la emisión de cada cuadro a la UV.
+- **Ojos y boca:** a partir de los contornos de MediaPipe se rellenan con **lava fundida**
+  (amarillo al centro, naranja al borde, con resplandor alrededor) que late con el resto.
+  Es un color liso a propósito: la boca de la malla canónica está cerrada y, al abrirla, sus
+  triángulos se estiran; un relleno liso se sigue viendo bien estirado. Con
+  `EYES_MOUTH = "transparent"` en el script se dejan transparentes para ver los reales.
 
 Resultado: 16 cuadros de 512×512. Aquí van 4 de ellos:
 
@@ -88,7 +93,7 @@ Resultado: 16 cuadros de 512×512. Aquí van 4 de ellos:
 
 ### 3. Sprite sheet — `blender/03_build_sheet.py`
 
-Los 16 cuadros se unen en una cuadrícula de 4×4 (2048×2048, PNG con transparencia, 3.9 MB).
+Los 16 cuadros se unen en una cuadrícula de 4×4 (2048×2048, PNG con transparencia, 3.1 MB).
 En el filtro, un shader avanza los cuadros a 8 fps y funde cada uno con el siguiente para que
 el flujo se vea suave.
 
@@ -141,7 +146,8 @@ python blender/04_ember.py                                                  # br
 ```
 
 El diseño se ajusta con las constantes al inicio de `02_lava_frames.py` (`COLORS`,
-`CRACK_SCALE`, `CRACK_WIDTH`, `FLOW_CONTRAST`, `PULSE`, `HOT_SPOTS`…).
+`CRACK_SCALE` (tamaño de las placas), `CRACK_WIDTH` (grosor de los ríos de lava),
+`FLOW_CONTRAST`, `PULSE`, `HOT_SPOTS`, `EYES_MOUTH`…).
 
 ### Ajustes del filtro
 
